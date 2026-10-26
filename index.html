@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marginalia: private PDF search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..800&family=Literata:opsz,wght@7..72,400..700&display=swap" rel="stylesheet">
+<style>
+  :root { --fog:#e8ebef; --sheet:#ffffff; --ink:#12151c; --muted:#5d6472; --rule:#d5d9e0; --cobalt:#2a3bd1; --on-cobalt:#ffffff; --hl:#ffe44d; --err:#c0392b;
+    --sans:"Archivo","Helvetica Neue",Arial,sans-serif; --serif:"Literata",Georgia,"Times New Roman",serif; color-scheme:light; }
+  :root[data-theme=dark] { --fog:#0f1116; --sheet:#181b23; --ink:#eceef4; --muted:#9aa1b1; --rule:#2b303b; --cobalt:#8c9bff; --on-cobalt:#0f1116; --hl:#6f6100; --err:#ff8f80; color-scheme:dark; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--fog); color:var(--ink); font:15px/1.5 var(--sans); }
+  button, input { font:inherit; color:inherit; }
+  :focus-visible { outline:2px solid var(--cobalt); outline-offset:2px; }
+  .layout { display:grid; grid-template-columns:320px minmax(0,1fr); min-height:100vh; }
+  aside { padding:30px 24px; display:flex; flex-direction:column; gap:24px; position:sticky; top:0; height:100vh; overflow:auto; }
+  .brand { font-stretch:118%; font-weight:700; font-size:21px; line-height:1.1; letter-spacing:-.01em; margin:0; }
+  .lede { margin:8px 0 0; color:var(--muted); font-size:14px; }
+  .add { display:block; width:100%; text-align:left; border:1.5px dashed var(--muted); background:none; border-radius:3px; padding:14px; cursor:pointer; }
+  .add:hover { border-color:var(--cobalt); color:var(--cobalt); }
+  .add strong { display:block; font-weight:700; }
+  .add span { font-size:13px; color:var(--muted); }
+  #docs { display:flex; flex-direction:column; }
+  .none { color:var(--muted); font-size:13.5px; margin:0; }
+  .doc { position:relative; padding:13px 0 13px 18px; border-top:1px solid var(--rule); }
+  .doc::before { content:""; position:absolute; left:0; top:13px; bottom:13px; width:5px; background:var(--c); border-radius:1px; }
+  .doc.off::before { background:var(--rule); }
+  .doc.off .name { color:var(--muted); }
+  .name { font-weight:600; font-size:14px; line-height:1.3; word-break:break-word; }
+  .meta { font-size:12.5px; color:var(--muted); margin-top:3px; }
+  .meta.err { color:var(--err); }
+  .track { height:3px; background:var(--rule); margin-top:9px; }
+  .track i { display:block; height:100%; background:var(--cobalt); transition:width .25s; }
+  .ctl { display:flex; gap:14px; margin-top:9px; font-size:13px; }
+  .ctl button, .foot button { border:0; background:none; padding:0; color:var(--muted); cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
+  .ctl button:hover, .foot button:hover { color:var(--ink); }
+  .foot { margin-top:auto; font-size:13px; color:var(--muted); display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
+  main { background:var(--sheet); margin:20px 20px 20px 0; padding:48px clamp(24px,5vw,72px) 80px; border-radius:3px; min-height:calc(100vh - 40px); box-shadow:0 0 0 1px var(--rule); }
+  .ask { display:flex; gap:16px; align-items:flex-end; border-bottom:2px solid var(--ink); margin:0; }
+  .ask:focus-within { border-color:var(--cobalt); }
+  #q { flex:1; min-width:0; border:0; background:none; outline:0; font-family:var(--sans); font-stretch:108%; font-weight:500; font-size:clamp(24px,3.6vw,40px); line-height:1.2; letter-spacing:-.01em; padding:8px 0 12px; }
+  #q::placeholder { color:var(--muted); opacity:.75; }
+  #q:disabled { cursor:not-allowed; }
+  #go { margin-bottom:12px; border:0; background:var(--cobalt); color:var(--on-cobalt); padding:10px 20px; border-radius:3px; font-weight:600; cursor:pointer; }
+  #go:disabled { background:var(--rule); color:var(--muted); cursor:not-allowed; }
+  #status { min-height:22px; margin-top:12px; color:var(--muted); font-size:14px; }
+  .empty { padding-top:64px; }
+  .empty h2 { font-stretch:112%; font-weight:700; font-size:clamp(34px,5vw,60px); line-height:1.03; letter-spacing:-.025em; margin:0 0 20px; }
+  .empty p { font-family:var(--serif); font-size:18px; line-height:1.65; color:var(--muted); max-width:46ch; margin:0; }
+  .summary { margin:22px 0 0; color:var(--muted); font-size:14px; }
+  .hits { margin-top:14px; }
+  .hit { display:grid; grid-template-columns:136px minmax(0,1fr); gap:28px; padding:26px 0; border-top:1px solid var(--rule); }
+  .pageno { font-stretch:118%; font-weight:700; font-size:34px; line-height:1; letter-spacing:-.02em; }
+  .pageno .p { font-size:15px; font-weight:600; color:var(--muted); margin-right:3px; letter-spacing:0; }
+  .from { margin-top:12px; padding-left:10px; border-left:4px solid var(--c); font-size:13px; font-weight:600; line-height:1.3; word-break:break-word; }
+  .str { margin-top:6px; font-size:12.5px; color:var(--muted); }
+  .text { font-family:var(--serif); font-size:16px; line-height:1.7; max-width:66ch; margin:0; }
+  .hit.first .text { font-size:19px; line-height:1.65; }
+  mark { color:inherit; background:linear-gradient(var(--hl),var(--hl)) no-repeat 0 0 / 0% 100% transparent; padding:0 .1em; margin:0 -.1em; animation:sweep .55s ease-out .15s forwards; }
+  @keyframes sweep { to { background-size:100% 100%; } }
+  @media (prefers-reduced-motion:reduce) { mark { animation:none; background-size:100% 100%; } .track i { transition:none; } }
+  #overlay { position:fixed; inset:0; margin:12px; display:none; place-items:center; text-align:center; padding:24px; z-index:10; background:color-mix(in srgb,var(--fog) 94%,transparent); border:4px dashed var(--cobalt); font-stretch:118%; font-weight:700; font-size:clamp(28px,5vw,56px); line-height:1.05; }
+  #overlay.on { display:grid; }
+  @media (max-width:860px) {
+    .layout { grid-template-columns:1fr; }
+    aside { position:static; height:auto; padding:24px 20px 8px; }
+    main { margin:0 12px 12px; min-height:0; padding:32px 20px 56px; }
+    .hit { grid-template-columns:1fr; gap:12px; }
+    .gutter { display:flex; flex-wrap:wrap; gap:6px 16px; align-items:baseline; }
+    .pageno { font-size:26px; } .from, .str { margin-top:0; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside>
+    <div>
+      <h1 class="brand">Marginalia</h1>
+      <p class="lede">Private PDF search. Find passages in your documents by meaning. Your files stay in this browser tab.</p>
+    </div>
+    <button class="add" id="drop" type="button"><strong>Add PDFs</strong><span>Choose files, or drop them anywhere on the page.</span></button>
+    <input id="file" type="file" accept="application/pdf" multiple hidden>
+    <div id="docs"></div>
+    <div class="foot"><span>Press / to jump to the search box.</span><button id="theme" type="button">Dark theme</button></div>
+  </aside>
+  <main>
+    <form class="ask" id="form">
+      <input id="q" type="text" placeholder="Add a PDF to begin" disabled autocomplete="off" aria-label="Your question">
+      <button id="go" type="submit" disabled>Search</button>
+    </form>
+    <div id="status" role="status" aria-live="polite"></div>
+    <div id="results">
+      <div class="empty">
+        <h2>Drop in a PDF.<br>Ask it a question.</h2>
+        <p>Scanned pages are read with OCR. Everything runs in this browser tab, so nothing you add is ever uploaded.</p>
+      </div>
+    </div>
+  </main>
+</div>
+<div id="overlay">Drop your PDFs to add them</div>
+
+<!-- OCR engine (global "Tesseract"), used only for scanned pages -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script type="module">
+const CDN = 'https://cdn.jsdelivr.net/npm/';
+const PDFJS = CDN + 'pdfjs-dist@4.10.38/build/';
+const TRANSFORMERS = CDN + '@huggingface/transformers@3.3.3';
+const MODEL = 'Xenova/all-MiniLM-L6-v2';
+
+const $ = (s) => document.querySelector(s);
+const COLORS = ['#1f7a8c', '#b4472f', '#5b7f3a', '#7a3f7a', '#c58a1b', '#3f5fa8', '#a23b5d', '#4d6b6b'];
+const docs = [];            // { id, name, color, pages, ocrPages, skipped, chunks, vectors, status, progress, note, active }
+let nextId = 1, queue = Promise.resolve();
+const setStatus = (t) => ($('#status').textContent = t);
+
+/* ---------- Theme ---------- */
+const root = document.documentElement;
+const setTheme = (t) => { root.dataset.theme = t; $('#theme').textContent = t === 'dark' ? 'Light theme' : 'Dark theme'; };
+setTheme(matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+$('#theme').onclick = () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark');
+
+/* ---------- PDF.js, loaded on first use so the page itself never waits on the network ---------- */
+let pdfjsP = null;
+function getPdfjs() {
+  return (pdfjsP ??= (async () => {
+    const lib = await import(PDFJS + 'pdf.min.mjs');
+    // Load the PDF worker through a blob so the browser doesn't block it as a cross-origin worker.
+    try {
+      const code = await (await fetch(PDFJS + 'pdf.worker.min.mjs')).text();
+      lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+    } catch { lib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.mjs'; }
+    return lib;
+  })().catch((err) => { pdfjsP = null; throw err; }));
+}
+
+/* ---------- Search model: runs in a Web Worker so the page never freezes ---------- */
+let modelReady = false, modelPct = 0;
+const markReady = () => { if (!modelReady) { modelReady = true; setStatus(''); } };
+const modelFiles = {};
+function onProgress(p) {
+  if (p && p.status === 'progress' && p.total) {
+    modelFiles[p.file] = { loaded: p.loaded, total: p.total };
+    const all = Object.values(modelFiles);
+    const total = all.reduce((a, f) => a + f.total, 0), got = all.reduce((a, f) => a + f.loaded, 0);
+    const pct = Math.min(99, Math.floor((100 * got) / total));
+    if (pct !== modelPct) {
+      modelPct = pct;
+      setStatus('Downloading the search model: ' + pct + '% (first time only, about 25 MB)');
+      render();
+    }
+  }
+}
+
+const WORKER_SRC = `
+import { pipeline } from '${TRANSFORMERS}';
+let loading = null;
+self.onmessage = async ({ data }) => {
+  try {
+    loading ??= pipeline('feature-extraction', '${MODEL}', {
+      dtype: 'q8',
+      progress_callback: (p) => self.postMessage({ type: 'progress', p }),
+    });
+    const extractor = await loading;
+    const out = await extractor(data.texts, { pooling: 'mean', normalize: true });
+    self.postMessage({ type: 'done', id: data.id, vectors: out.tolist() });
+  } catch (e) {
+    loading = null;
+    self.postMessage({ type: 'error', id: data.id, message: String((e && e.message) || e) });
+  }
+};
+`;
+
+let worker = null, workerFailed = false, reqId = 0, mainPipe = null;
+const pending = new Map();
+
+function failWorker() {
+  workerFailed = true;
+  if (worker) worker.terminate();
+  worker = null;
+  for (const job of pending.values()) job.reject(new Error('The search worker stopped.'));
+  pending.clear();
+}
+function getWorker() {
+  if (worker || workerFailed) return worker;
+  try {
+    worker = new Worker(URL.createObjectURL(new Blob([WORKER_SRC], { type: 'text/javascript' })), { type: 'module' });
+    worker.onmessage = ({ data }) => {
+      if (data.type === 'progress') return onProgress(data.p);
+      const job = pending.get(data.id);
+      if (!job) return;
+      pending.delete(data.id);
+      if (data.type === 'done') job.resolve(data.vectors); else job.reject(new Error(data.message));
+    };
+    worker.onerror = (e) => { if (e.preventDefault) e.preventDefault(); failWorker(); };
+  } catch { workerFailed = true; worker = null; }
+  return worker;
+}
+
+async function embed(texts) {
+  const w = getWorker();
+  if (w) {
+    try {
+      const vectors = await new Promise((resolve, reject) => {
+        const id = ++reqId;
+        pending.set(id, { resolve, reject });
+        w.postMessage({ id, texts });
+      });
+      markReady();
+      return vectors;
+    } catch (err) {
+      console.warn('Worker failed, falling back to the main thread:', err);
+      failWorker();
+    }
+  }
+  try {   // fallback: same model on the main thread (slower, may briefly freeze the page)
+    mainPipe ??= import(TRANSFORMERS).then((m) => m.pipeline('feature-extraction', MODEL, { dtype: 'q8', progress_callback: onProgress }));
+    const extractor = await mainPipe;
+    const out = await extractor(texts, { pooling: 'mean', normalize: true });
+    markReady();
+    return out.tolist();
+  } catch (err) {
+    mainPipe = null; err.modelError = true; throw err;
+  }
+}
+
+/* ---------- OCR for scanned pages ---------- */
+let ocrWorker = null;
+async function stopOcr() {
+  const w = ocrWorker; ocrWorker = null;
+  if (w) { try { await w.terminate(); } catch { /* ignore */ } }
+}
+async function ocrPage(page) {
+  const viewport = page.getViewport({ scale: 2 });
+  const canvas = document.createElement('canvas');
+  canvas.width = viewport.width; canvas.height = viewport.height;
+  try {
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    if (!ocrWorker) ocrWorker = await Tesseract.createWorker('eng');
+    const { data } = await ocrWorker.recognize(canvas);
+    return { text: data.text, conf: data.confidence };   // conf: 0 to 100, how sure OCR is
+  } finally { canvas.width = canvas.height = 0; }
+}
+
+/* ---------- Chunking: overlapping windows of words, remembering the page ---------- */
+function split(text, page, size = 180, step = 150) {
+  if (!text) return [];
+  const words = text.split(' '), out = [];
+  for (let i = 0; i < words.length; i += step) {
+    out.push({ page, text: words.slice(i, i + size).join(' ') });
+    if (i + size >= words.length) break;
+  }
+  return out;
+}
+
+/* ---------- Is this text real, or scrambled/garbage? ---------- */
+// Designed PDFs (magazines, Canva) can have a text layer that is just random letters.
+function looksGood(text, minChars = 40) {
+  if (text.length < minChars) return false;
+  const letters = (text.match(/[\p{L}\p{M}]/gu) || []).length;
+  if (letters / text.length < 0.55) return false;               // mostly symbols or digits
+  const words = text.split(' ').filter(Boolean);
+  if (words.length >= 8) {
+    const tiny = words.filter((w) => (w.match(/[\p{L}\p{M}]/gu) || []).length <= 2).length;
+    if (tiny / words.length > 0.5) return false;                 // mostly 1-2 letter "words" = scrambled
+  }
+  return true;
+}
+
+/* ---------- Process one PDF: read, OCR if needed, index ---------- */
+async function processDoc(doc, file) {
+  if (doc.removed) return;
+  let pdf = null;
+  try {
+    doc.status = 'working'; doc.note = 'Opening file...'; render();
+    const pdfjsLib = await getPdfjs();
+    pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    doc.pages = pdf.numPages;
+    for (let p = 1; p <= pdf.numPages; p++) {
+      if (doc.removed) return;
+      doc.progress = ((p - 1) / pdf.numPages) * 0.5; doc.note = 'Reading page ' + p + ' of ' + pdf.numPages; render();
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      let text = content.items.map((i) => i.str).join(' ').replace(/\s+/g, ' ').trim();
+      if (!looksGood(text)) {   // no text, or scrambled text: try reading the page image instead
+        doc.note = 'Page ' + p + ' needs OCR...'; render();
+        let ocr = { text: '', conf: 0 };
+        try { ocr = await ocrPage(page); } catch (e) { console.warn('OCR failed on page ' + p, e); }
+        const ocrText = ocr.text.replace(/\s+/g, ' ').trim();
+        if (ocr.conf >= 45 && looksGood(ocrText)) { text = ocrText; doc.ocrPages++; }
+        else if (!looksGood(text, 8)) { text = ''; doc.skipped++; }   // unreadable either way, skip it
+      }
+      page.cleanup();
+      doc.chunks.push(...split(text, p).filter((c) => looksGood(c.text, 20)));
+    }
+    await stopOcr();
+    if (!doc.chunks.length) throw new Error('No readable text found');
+    for (let i = 0; i < doc.chunks.length; i += 8) {
+      if (doc.removed) return;
+      doc.progress = 0.5 + 0.5 * (i / doc.chunks.length);
+      doc.note = modelReady ? 'Indexing passages...' : modelPct ? 'Downloading search model ' + modelPct + '%' : 'Starting the search model...';
+      render();
+      doc.vectors.push(...(await embed(doc.chunks.slice(i, i + 8).map((c) => c.text))));
+    }
+    doc.status = 'ready'; setStatus('');
+  } catch (err) {
+    console.error(err); doc.status = 'error'; setStatus('');
+    doc.note = err.modelError
+      ? 'Could not load the search model. Check your internet connection, then reload and try again.'
+      : 'Could not read this file (' + err.message + '). Try another PDF.';
+  } finally {
+    await stopOcr();
+    if (pdf) { try { await pdf.destroy(); } catch { /* ignore */ } }
+  }
+  render();
+}
+
+function addFiles(list) {
+  for (const file of [...list]) {
+    if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') continue;
+    const key = file.name + ':' + file.size;
+    if (docs.some((d) => d.key === key)) continue;   // already added
+    const doc = { id: nextId++, key, name: file.name.replace(/\.pdf$/i, ''), color: COLORS[docs.length % COLORS.length],
+      pages: 0, ocrPages: 0, skipped: 0, chunks: [], vectors: [], status: 'queued', progress: 0, note: 'Waiting...', active: true };
+    docs.push(doc);
+    queue = queue.then(() => processDoc(doc, file));   // one PDF at a time keeps the browser responsive
+  }
+  render();
+}
+
+/* ---------- Sidebar ---------- */
+function render() {
+  const box = $('#docs');
+  box.innerHTML = '';
+  if (!docs.length) box.innerHTML = '<p class="none">No documents yet.</p>';
+  for (const d of docs) {
+    const busy = d.status === 'working' || d.status === 'queued';
+    const meta = d.status === 'ready'
+      ? d.pages + ' pages, ' + d.chunks.length + (d.chunks.length === 1 ? ' passage' : ' passages') + (d.ocrPages ? ', ' + d.ocrPages + ' read with OCR' : '') + (d.skipped ? ', ' + d.skipped + ' unreadable skipped' : '')
+      : d.note;
+    const row = document.createElement('div');
+    row.className = 'doc' + (d.status === 'ready' && !d.active ? ' off' : '');
+    row.style.setProperty('--c', d.color);
+    row.innerHTML = '<div class="name"></div><div class="meta"></div>' + (busy ? '<div class="track"><i></i></div>' : '') + '<div class="ctl"></div>';
+    row.querySelector('.name').textContent = d.name;
+    const m = row.querySelector('.meta'); m.textContent = meta; if (d.status === 'error') m.classList.add('err');
+    if (busy) row.querySelector('.track i').style.width = Math.round(d.progress * 100) + '%';
+    const ctl = row.querySelector('.ctl');
+    if (d.status === 'ready') {
+      const t = document.createElement('button'); t.type = 'button';
+      t.textContent = d.active ? 'Leave out of search' : 'Include in search';
+      t.onclick = () => { d.active = !d.active; render(); };
+      ctl.append(t);
+    }
+    const x = document.createElement('button'); x.type = 'button'; x.textContent = 'Remove';
+    x.onclick = () => { d.removed = true; docs.splice(docs.indexOf(d), 1); render(); };
+    ctl.append(x);
+    box.append(row);
+  }
+  updateSearchBox();
+}
+function updateSearchBox() {
+  const live = docs.filter((d) => d.status === 'ready' && d.active).length;
+  $('#q').disabled = !live; $('#go').disabled = !live;
+  const working = docs.some((d) => d.status === 'working' || d.status === 'queued'), ready = docs.some((d) => d.status === 'ready');
+  $('#q').placeholder = live === 1 ? 'Ask your document anything' : live ? 'Ask across ' + live + ' documents'
+    : working ? 'Waiting for indexing to finish' : ready ? 'Include a document to search' : docs.length ? 'Add another PDF to search' : 'Add a PDF to begin';
+}
+
+/* ---------- Search across all active documents ---------- */
+const STOP = new Set(('what did who how why does that this with from have about which their there when where your would could should into than then them they were will ' +
+  'the and for are was but not you can has had his her she him its our out any all one may also been being more most some such only other over very just tell give says said whom whose').split(' '));
+function highlight(el, text, terms) {
+  if (!terms.length) { el.textContent = text; return; }
+  const re = new RegExp('(' + terms.join('|') + ')', 'gi');
+  text.split(re).forEach((part, i) => {
+    if (i % 2) { const m = document.createElement('mark'); m.textContent = part; el.append(m); } else el.append(part);
+  });
+}
+const MIN_SCORE = 0.22;   // passages scoring below this are hidden (tune it if you see too few or too many results)
+async function runSearch(q) {
+  const live = docs.filter((d) => d.status === 'ready' && d.active);
+  if (!live.length) return;
+  setStatus('Searching...');
+  const [qv] = await embed([q]);
+  const terms = [...new Set((q.toLowerCase().match(/[\p{L}\p{M}\p{N}]{3,}/gu) || []).filter((t) => !STOP.has(t)))];
+
+  const all = [];
+  for (const d of live) d.vectors.forEach((v, i) => all.push({ d, c: d.chunks[i], i, lc: d.chunks[i].text.toLowerCase(), cos: v.reduce((sum, x, k) => sum + x * qv[k], 0) }));
+
+  // Keyword part: rare words (like a person's name) count for more than common ones.
+  const idf = terms.map((t) => Math.log(1 + all.length / (1 + all.filter((a) => a.lc.includes(t)).length)));
+  const idfSum = idf.reduce((a, b) => a + b, 0) || 1;
+  for (const a of all) {
+    const kw = terms.reduce((sum, t, i) => sum + (a.lc.includes(t) ? idf[i] : 0), 0) / idfSum;   // 0 to 1
+    a.s = a.cos + 0.35 * kw;   // hybrid score: closeness in meaning plus keyword matches
+  }
+  const ranked = all.filter((a) => a.s >= MIN_SCORE).sort((a, b) => b.s - a.s), top = [];
+  for (const a of ranked) {
+    if (top.length === 8) break;
+    if (top.some((t) => t.d === a.d && Math.abs(t.i - a.i) <= 1)) continue;   // neighbouring chunks share text, skip the weaker one
+    top.push(a);
+  }
+
+  const out = $('#results'); out.innerHTML = '';
+  if (!top.length) {
+    out.innerHTML = '<p class="summary">Nothing matched strongly. Try other words, or check that the answer is in the documents you have included.</p>';
+    setStatus(''); return;
+  }
+  const sum = document.createElement('p'); sum.className = 'summary';
+  sum.textContent = top.length + ' passage' + (top.length > 1 ? 's' : '') + ' across ' + live.length + ' document' + (live.length > 1 ? 's' : '') + ', best first';
+  const list = document.createElement('div'); list.className = 'hits';
+  top.forEach(({ d, c, s }, n) => {
+    const hit = document.createElement('article'); hit.className = 'hit' + (n === 0 ? ' first' : '');
+    hit.style.setProperty('--c', d.color);
+    hit.innerHTML = '<div class="gutter"><div class="pageno"><span class="p">p.</span></div><div class="from"></div><div class="str"></div></div><p class="text"></p>';
+    hit.querySelector('.pageno').append(String(c.page));
+    hit.querySelector('.from').textContent = d.name;
+    hit.querySelector('.str').textContent = s >= 0.5 ? 'Strong match' : s >= 0.35 ? 'Good match' : 'Weak match';
+    highlight(hit.querySelector('.text'), c.text, terms);
+    list.append(hit);
+  });
+  out.append(sum, list);
+  setStatus('');
+}
+let searching = false;
+async function search(q) {
+  if (searching) return;
+  searching = true;
+  try { await runSearch(q); }
+  catch (err) {
+    console.error(err); setStatus('');
+    const p = document.createElement('p'); p.className = 'summary';
+    p.textContent = 'Search failed' + (err.modelError ? ': the search model could not load. Check your internet connection and reload.' : '. Please try again.');
+    $('#results').replaceChildren(p);
+  } finally { searching = false; }
+}
+
+/* ---------- Wiring ---------- */
+$('#drop').onclick = () => $('#file').click();
+$('#file').onchange = (e) => { addFiles(e.target.files); e.target.value = ''; };
+$('#form').onsubmit = (e) => { e.preventDefault(); const v = $('#q').value.trim(); if (v) search(v); };
+addEventListener('keydown', (e) => { if (e.key === '/' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); $('#q').focus(); } });
+let depth = 0;   // full-page drag and drop
+addEventListener('dragenter', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { depth++; $('#overlay').classList.add('on'); } });
+addEventListener('dragleave', () => { if (--depth <= 0) { depth = 0; $('#overlay').classList.remove('on'); } });
+addEventListener('dragover', (e) => e.preventDefault());
+addEventListener('drop', (e) => { e.preventDefault(); depth = 0; $('#overlay').classList.remove('on'); addFiles(e.dataTransfer.files); });
+render();
+</script>
+</body>
+</html>
